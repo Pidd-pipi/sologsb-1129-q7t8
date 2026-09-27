@@ -149,14 +149,22 @@ export default function MatrixDetail() {
       pushToast('缺损登记未通过校验，请按提示修正', 'warn');
       return;
     }
-    await addDefect(input);
-    pushToast(
-      defectForm.availability === '可用'
-        ? '已登记缺损，字模保持可用'
-        : `已登记缺损，「${matrix.character}」已转为${defectForm.availability}`,
-    );
-    setDefectForm((prev) => ({ ...prev, handling: '', note: '' }));
-    setDefectErrors({});
+    try {
+      const { defect, withdrawnSlots, affectedCases } = await addDefect(input);
+      if (defect.availability === '可用') {
+        pushToast('已登记缺损，字模保持可用');
+      } else {
+        const withdrawnNote =
+          withdrawnSlots > 0
+            ? `，已从 ${affectedCases} 个字盘撤下 ${withdrawnSlots} 处格位`
+            : '，该字模未落在任何字盘格位';
+        pushToast(`已登记缺损，「${matrix.character}」已转为${defect.availability}${withdrawnNote}；补刻后需手动重新落位`);
+      }
+      setDefectForm((prev) => ({ ...prev, handling: '', note: '' }));
+      setDefectErrors({});
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : '缺损登记失败', 'error');
+    }
   };
 
   const handleAddProof = async (e: FormEvent) => {
@@ -200,8 +208,12 @@ export default function MatrixDetail() {
   };
 
   const handleRepair = async () => {
-    await repairMatrix(matrix.id, '补刻工 陈之安');
-    pushToast(`「${matrix.character}」补刻完成，恢复可用`);
+    try {
+      await repairMatrix(matrix.id, '补刻工 陈之安');
+      pushToast(`「${matrix.character}」补刻完成，已恢复可用；不会自动塞回旧格位，请到字盘布局页手动落位`);
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : '补刻恢复失败', 'error');
+    }
   };
 
   const handleRemove = async () => {
@@ -386,7 +398,7 @@ export default function MatrixDetail() {
         <div className="mt-panel">
           <div className="mt-panel-head">
             <h3 className="font-song text-sm font-semibold text-ink">缺损历史</h3>
-            <span className="mt-sub">登记后自动停用字模，补刻后恢复可用</span>
+            <span className="mt-sub">登记停用后自动从所有字盘撤格；补刻后仅恢复可用，需手动落位</span>
           </div>
           <ul className="divide-y divide-paper-line" data-testid="defect-history">
             {matrixDefects.length === 0 ? (

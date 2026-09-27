@@ -15,6 +15,8 @@ export const DB_NAME = 'gbmovabletype-db';
  * v1 建 matrices
  * v2 加 cases 表与 matrixId 索引
  * v3 加 defects / proofs 表，并为停用字模回填缺损原因
+ * v4 索引结构不变：把「停用 / 待补刻」字模从所有字盘格位撤下并重建 matrixId 索引，
+ *    保证清点数字与字盘布局一致（缺损登记会在同一事务内撤格）
  */
 class MovableTypeDb extends Dexie {
   matrices!: Table<TypeMatrix, string>;
@@ -78,6 +80,35 @@ class MovableTypeDb extends Dexie {
           });
         }
       });
+    this.version(4)
+      .stores({
+        matrices: 'id, code, character, font, sizeName, material, availability',
+        cases: 'id, code, kind, workStation, *matrixId',
+        defects: 'id, matrixId, defectType, severity, availability, foundDate',
+        proofs: 'id, matrixId, sampleNo, clarity, proofDate',
+      })
+      .upgrade(async (tx) => {
+        // v4：清点一致性。停用 / 待补刻字模不应仍占着字盘格位，
+        // 这里把这些字模从所有字盘撤下，并按剩余 slots 重建 matrixId 索引。
+        const matrices: TypeMatrix[] = await tx.table('matrices').toArray();
+        const unavailable = new Set(
+          matrices.filter((m) => m.availability !== '可用').map((m) => m.id),
+        );
+        const caseTable = tx.table('cases');
+        const cases: TypeCase[] = await caseTable.toArray();
+        const now = new Date().toISOString();
+        for (const c of cases) {
+          const slots = (c.slots ?? []).filter((s) => !unavailable.has(s.matrixId));
+          const changed = slots.length !== (c.slots?.length ?? 0);
+          const ids = matrixIdsOf(slots);
+          const idsSame =
+            ids.length === (c.matrixId ?? []).length &&
+            ids.every((id, i) => id === (c.matrixId ?? [])[i]);
+          if (changed || !idsSame) {
+            await caseTable.update(c.id, { slots, matrixId: ids, updatedAt: now });
+          }
+        }
+      });
   }
 }
 
@@ -129,14 +160,13 @@ const SEED_CASE_A_SLOTS: SeedSlot[] = [
   { row: 0, col: 1, matrixId: 'm-1002', character: '字' },
   { row: 0, col: 2, matrixId: 'm-1003', character: '印' },
   { row: 0, col: 3, matrixId: 'm-1004', character: '刷' },
-  { row: 1, col: 0, matrixId: 'm-1005', character: '排' },
   { row: 1, col: 1, matrixId: 'm-1006', character: '版' },
   { row: 1, col: 2, matrixId: 'm-1007', character: '铅' },
   { row: 1, col: 3, matrixId: 'm-1009', character: '铜' },
   { row: 2, col: 0, matrixId: 'm-1010', character: '刻' },
   { row: 2, col: 1, matrixId: 'm-1012', character: '纸' },
   { row: 2, col: 2, matrixId: 'm-1013', character: '宋' },
-  { row: 2, col: 3, matrixId: 'm-1014', character: '体' },
+  // m-1005「排」/ m-1014「体」为待补刻字模，清点时已撤格，不在字盘中占位
 ];
 
 const SEED_CASE_B_SLOTS: SeedSlot[] = [

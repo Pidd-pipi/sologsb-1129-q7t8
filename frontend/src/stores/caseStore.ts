@@ -14,6 +14,10 @@ interface CaseState {
   createCase: (input: CaseInput) => Promise<TypeCase>;
   updateCase: (id: string, patch: Partial<TypeCase>) => Promise<void>;
   saveSlots: (id: string, slots: CaseSlot[]) => Promise<void>;
+  /** 缺损撤格事务提交成功后，把已落库的格位结果同步进内存状态（不再写库） */
+  applyWithdrawnSlots: (
+    updates: Array<{ id: string; slots: CaseSlot[]; matrixId: string[]; updatedAt: string }>,
+  ) => void;
   removeCase: (id: string) => Promise<void>;
 }
 
@@ -90,6 +94,19 @@ export const useCaseStore = create<CaseState>((set, get) => ({
   removeCase: async (id) => {
     await db.cases.delete(id);
     set((s) => ({ cases: s.cases.filter((c) => c.id !== id) }));
+  },
+
+  applyWithdrawnSlots: (updates) => {
+    if (updates.length === 0) return;
+    const byId = new Map(updates.map((u) => [u.id, u]));
+    set((s) => ({
+      cases: s.cases.map((c) => {
+        const u = byId.get(c.id);
+        // 字盘尚未载入内存或该字盘未受影响时保持原样
+        if (!u) return c;
+        return { ...c, slots: u.slots, matrixId: u.matrixId, updatedAt: u.updatedAt };
+      }),
+    }));
   },
 }));
 

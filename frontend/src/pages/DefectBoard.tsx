@@ -102,12 +102,19 @@ export default function DefectBoard() {
     }
     setSubmitting(true);
     try {
-      const row = await addDefect(input);
-      pushToast(
-        row.availability === '可用'
-          ? `已登记「${row.character}」缺损，字模保持可用`
-          : `已登记「${row.character}」缺损，字模转为${row.availability}并进入补刻清单`,
-      );
+      const result = await addDefect(input);
+      const { defect, withdrawnSlots, affectedCases } = result;
+      if (defect.availability === '可用') {
+        pushToast(`已登记「${defect.character}」缺损，字模保持可用`);
+      } else {
+        const withdrawnNote =
+          withdrawnSlots > 0
+            ? `，已从 ${affectedCases} 个字盘撤下 ${withdrawnSlots} 处格位`
+            : '，该字模未落在任何字盘格位';
+        pushToast(
+          `已登记「${defect.character}」缺损，字模转为${defect.availability}${withdrawnNote}；补刻后需手动重新落位`,
+        );
+      }
       patch({ handling: '', note: '' });
       setErrors({});
     } catch (err) {
@@ -125,7 +132,7 @@ export default function DefectBoard() {
             缺损登记
           </h2>
           <p className="mt-sub">
-            选字模与缺损类型、程度，提交后字模自动停用并进入待补刻清单；补刻完成后可一键恢复可用。
+            选字模与缺损类型、程度，提交后在同一事务内停用字模并从所有字盘撤格、刷新落位索引；补刻完成仅恢复可用，旧格位由工作人员手动落位。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -242,7 +249,7 @@ export default function DefectBoard() {
                   </option>
                 ))}
               </select>
-              <p className="mt-hint">选择「停用」或「待补刻」时提交后会自动停用该字模</p>
+              <p className="mt-hint">选择「停用」或「待补刻」时，提交后会停用该字模并从所有字盘撤下其格位</p>
             </div>
             <div>
               <label className="mt-label" htmlFor="defect-operator-input">
@@ -319,7 +326,7 @@ export default function DefectBoard() {
         <div className="mt-panel">
           <div className="mt-panel-head">
             <h3 className="font-song text-sm font-semibold text-ink">待补刻清单</h3>
-            <span className="mt-sub">补刻完成后恢复可用</span>
+            <span className="mt-sub">补刻完成仅恢复可用，不自动塞回旧格位，需手动落位</span>
           </div>
           {pendingRepair.length === 0 ? (
             <div className="px-4 py-4">
@@ -357,8 +364,12 @@ export default function DefectBoard() {
                         className="mt-btn mt-btn-primary"
                         data-testid={`repair-${m.id}`}
                         onClick={async () => {
-                          await repairMatrix(m.id, draft.operator || '补刻工 陈之安');
-                          pushToast(`「${m.character}」补刻完成，恢复可用`);
+                          try {
+                            await repairMatrix(m.id, draft.operator || '补刻工 陈之安');
+                            pushToast(`「${m.character}」补刻完成，已恢复可用；请由工作人员到字盘布局页手动落位`);
+                          } catch (err) {
+                            pushToast(err instanceof Error ? err.message : '补刻恢复失败', 'error');
+                          }
                         }}
                       >
                         补刻完成

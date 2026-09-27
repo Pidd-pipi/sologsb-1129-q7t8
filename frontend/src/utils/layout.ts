@@ -149,6 +149,18 @@ export function matrixIdsOf(slots: CaseSlot[]): string[] {
   return Array.from(new Set(slots.map((s) => s.matrixId).filter(Boolean)));
 }
 
+/**
+ * 从字盘格位中撤下指定字模（缺损停用 / 待补刻时使用）。
+ * 返回新的 slots 数组与实际撤下的格位数，不修改入参。
+ */
+export function withdrawMatrix(
+  slots: CaseSlot[],
+  matrixId: string,
+): { slots: CaseSlot[]; withdrawn: number } {
+  const kept = slots.filter((s) => s.matrixId !== matrixId);
+  return { slots: kept, withdrawn: slots.length - kept.length };
+}
+
 /** 落位率百分比（一位小数） */
 export function fillRate(slots: CaseSlot[], rows: number, cols: number): number {
   const capacity = capacityOf(rows, cols);
