@@ -124,19 +124,19 @@ interface SeedSlot {
   character: string;
 }
 
+// 停用 / 待补刻的字模不入字盘：缺损登记会自动撤格，初始档案即保持
+// 「非可用字模不占格位」的一致状态（m-1005「排」、m-1014「体」均待补刻）。
 const SEED_CASE_A_SLOTS: SeedSlot[] = [
   { row: 0, col: 0, matrixId: 'm-1001', character: '活' },
   { row: 0, col: 1, matrixId: 'm-1002', character: '字' },
   { row: 0, col: 2, matrixId: 'm-1003', character: '印' },
   { row: 0, col: 3, matrixId: 'm-1004', character: '刷' },
-  { row: 1, col: 0, matrixId: 'm-1005', character: '排' },
   { row: 1, col: 1, matrixId: 'm-1006', character: '版' },
   { row: 1, col: 2, matrixId: 'm-1007', character: '铅' },
   { row: 1, col: 3, matrixId: 'm-1009', character: '铜' },
   { row: 2, col: 0, matrixId: 'm-1010', character: '刻' },
   { row: 2, col: 1, matrixId: 'm-1012', character: '纸' },
   { row: 2, col: 2, matrixId: 'm-1013', character: '宋' },
-  { row: 2, col: 3, matrixId: 'm-1014', character: '体' },
 ];
 
 const SEED_CASE_B_SLOTS: SeedSlot[] = [

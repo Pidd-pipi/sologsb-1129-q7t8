@@ -2,10 +2,22 @@ import { create } from 'zustand';
 import { db, ensureSeed } from '../db';
 import type { DefectInput, DefectLog } from '../types/defect';
 import { shouldDisableMatrix } from '../types/defect';
+import type { CaseSlot, TypeCase } from '../types/case';
 import type { MatrixInput, TypeMatrix } from '../types/matrix';
 import { ptOfSize } from '../types/matrix';
 import type { ProofInput, ProofRecord } from '../types/proof';
+import { matrixIdsOf } from '../utils/layout';
 import { makeId, toPlain, todayStr } from '../utils/format';
+import { useCaseStore } from './caseStore';
+
+/** 缺损登记结果：记录本体 + 撤格统计（跨全部字盘） */
+export interface DefectRegistration {
+  defect: DefectLog;
+  /** 撤下的格位总数（同一字模落在多处时累加） */
+  removedSlots: number;
+  /** 涉及的字盘数 */
+  affectedCases: number;
+}
 
 interface MatrixState {
   matrices: TypeMatrix[];
@@ -18,7 +30,7 @@ interface MatrixState {
   createMatrix: (input: MatrixInput) => Promise<TypeMatrix>;
   updateMatrix: (id: string, patch: Partial<TypeMatrix>) => Promise<void>;
   removeMatrix: (id: string) => Promise<void>;
-  addDefect: (input: DefectInput) => Promise<DefectLog>;
+  addDefect: (input: DefectInput) => Promise<DefectRegistration>;
   repairMatrix: (matrixId: string, operator: string) => Promise<void>;
   addProof: (input: ProofInput) => Promise<ProofRecord>;
 }
@@ -106,10 +118,16 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
     }));
   },
 
-  /** 登记缺损：写入缺损记录，并按结论自动停用字模 */
+  /**
+   * 登记缺损：缺损入库、字模状态、从所有字盘撤格、落位索引刷新放进同一次
+   * 本地事务（defects / matrices / cases 三表 rw），任一步失败整批回滚，
+   * 不会留下「已停用却仍占着格位」的半成品。
+   * 注意：以 slots 为撤格依据（而非 matrixId 索引），避免历史索引残留导致漏撤。
+   */
   addDefect: async (input) => {
     const matrix = get().matrices.find((m) => m.id === input.matrixId);
     if (!matrix) throw new Error('未找到对应字模，无法登记缺损');
+    const now = new Date().toISOString();
     const row: DefectLog = toPlain({
       id: makeId('dft'),
       matrixId: input.matrixId,
@@ -122,17 +140,77 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
       availability: input.availability,
       operator: input.operator.trim(),
       note: (input.note ?? '').trim(),
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     });
-    await db.defects.add(row);
+    const disable = shouldDisableMatrix(input.availability);
+
+    // 撤格结果在事务内收集，提交成功后再同步内存状态
+    let removedSlots = 0;
+    const casePatches: Array<{ id: string; slots: CaseSlot[]; matrixId: string[] }> = [];
+
+    await db.transaction('rw', db.defects, db.matrices, db.cases, async () => {
+      // 1) 缺损入库
+      await db.defects.add(row);
+      if (!disable) return;
+
+      // 2) 字模状态转为停用 / 待补刻
+      await db.matrices.update(input.matrixId, {
+        availability: input.availability,
+        updatedAt: now,
+      });
+
+      // 3) 从所有字盘撤下该字模；slots 已无该字模但索引仍残留时，只刷新索引
+      const allCases: TypeCase[] = await db.cases.toArray();
+      for (const c of allCases) {
+        const nextSlots = c.slots.filter((s) => s.matrixId !== input.matrixId);
+        const removed = c.slots.length - nextSlots.length;
+        const indexStale = c.matrixId.includes(input.matrixId);
+        if (removed === 0 && !indexStale) continue;
+        removedSlots += removed;
+        casePatches.push({ id: c.id, slots: toPlain(nextSlots), matrixId: matrixIdsOf(nextSlots) });
+      }
+
+      // 4) 落位索引（matrixId 多值索引）随撤格一起刷新
+      for (const p of casePatches) {
+        await db.cases.update(p.id, {
+          slots: p.slots,
+          matrixId: p.matrixId,
+          updatedAt: now,
+        });
+      }
+    });
+
+    // 事务已提交，统一刷新内存状态；若中途抛错则一行都不会执行
     set((s) => ({ defects: [row, ...s.defects] }));
-    if (shouldDisableMatrix(input.availability)) {
-      await get().updateMatrix(input.matrixId, { availability: input.availability });
+    if (disable) {
+      set((s) => ({
+        matrices: s.matrices
+          .map((m) =>
+            m.id === input.matrixId
+              ? { ...m, availability: input.availability, updatedAt: now }
+              : m,
+          )
+          .sort(byUpdatedDesc),
+      }));
+      if (casePatches.length > 0) {
+        useCaseStore.setState((s) => ({
+          cases: s.cases.map((c) => {
+            const p = casePatches.find((x) => x.id === c.id);
+            return p
+              ? { ...c, slots: p.slots, matrixId: p.matrixId, updatedAt: now }
+              : c;
+          }),
+        }));
+      }
     }
-    return row;
+    return { defect: row, removedSlots, affectedCases: casePatches.length };
   },
 
-  /** 补刻完成：恢复可用，并留下一条收尾记录 */
+  /**
+   * 补刻完成：只把字模恢复为可用，并留下一条收尾记录。
+   * 不会自动塞回旧格位——撤格期间旧格位可能已放入别的字模，自动回填会
+   * 覆盖后来的落位；由工作人员到「字盘布局」页面手动重新落位。
+   */
   repairMatrix: async (matrixId, operator) => {
     const matrix = get().matrices.find((m) => m.id === matrixId);
     if (!matrix) throw new Error('未找到对应字模，无法补刻');
@@ -140,6 +218,7 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
       .defects.filter((d) => d.matrixId === matrixId)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     const last = history[0];
+    const now = new Date().toISOString();
     const row: DefectLog = toPlain({
       id: makeId('dft'),
       matrixId,
@@ -152,11 +231,20 @@ export const useMatrixStore = create<MatrixState>((set, get) => ({
       availability: '可用' as const,
       operator: operator.trim() || '补刻工',
       note: '补刻收尾记录',
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     });
-    await db.defects.add(row);
+    await db.transaction('rw', db.defects, db.matrices, async () => {
+      await db.defects.add(row);
+      await db.matrices.update(matrixId, { availability: '可用', updatedAt: now });
+    });
     set((s) => ({ defects: [row, ...s.defects] }));
-    await get().updateMatrix(matrixId, { availability: '可用' });
+    set((s) => ({
+      matrices: s.matrices
+        .map((m) =>
+          m.id === matrixId ? { ...m, availability: '可用' as const, updatedAt: now } : m,
+        )
+        .sort(byUpdatedDesc),
+    }));
   },
 
   addProof: async (input) => {

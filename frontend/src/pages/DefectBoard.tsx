@@ -102,11 +102,13 @@ export default function DefectBoard() {
     }
     setSubmitting(true);
     try {
-      const row = await addDefect(input);
+      const { defect, removedSlots, affectedCases } = await addDefect(input);
       pushToast(
-        row.availability === '可用'
-          ? `已登记「${row.character}」缺损，字模保持可用`
-          : `已登记「${row.character}」缺损，字模转为${row.availability}并进入补刻清单`,
+        defect.availability === '可用'
+          ? `已登记「${defect.character}」缺损，字模保持可用`
+          : removedSlots > 0
+            ? `已登记「${defect.character}」缺损，字模转为${defect.availability}，已从 ${affectedCases} 个字盘撤下 ${removedSlots} 处格位`
+            : `已登记「${defect.character}」缺损，字模转为${defect.availability}，其当前未落在任何格位`,
       );
       patch({ handling: '', note: '' });
       setErrors({});
@@ -125,7 +127,7 @@ export default function DefectBoard() {
             缺损登记
           </h2>
           <p className="mt-sub">
-            选字模与缺损类型、程度，提交后字模自动停用并进入待补刻清单；补刻完成后可一键恢复可用。
+            选字模与缺损类型、程度，提交后字模自动停用、从所有字盘撤下格位并进入待补刻清单；补刻完成后恢复可用，格位需工作人员手动重新落位。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -242,7 +244,7 @@ export default function DefectBoard() {
                   </option>
                 ))}
               </select>
-              <p className="mt-hint">选择「停用」或「待补刻」时提交后会自动停用该字模</p>
+              <p className="mt-hint">选择「停用」或「待补刻」时，提交后会自动停用该字模并从所有字盘撤下格位</p>
             </div>
             <div>
               <label className="mt-label" htmlFor="defect-operator-input">
@@ -319,7 +321,7 @@ export default function DefectBoard() {
         <div className="mt-panel">
           <div className="mt-panel-head">
             <h3 className="font-song text-sm font-semibold text-ink">待补刻清单</h3>
-            <span className="mt-sub">补刻完成后恢复可用</span>
+            <span className="mt-sub">补刻完成后恢复可用，再到字盘布局手动落位</span>
           </div>
           {pendingRepair.length === 0 ? (
             <div className="px-4 py-4">
@@ -358,7 +360,9 @@ export default function DefectBoard() {
                         data-testid={`repair-${m.id}`}
                         onClick={async () => {
                           await repairMatrix(m.id, draft.operator || '补刻工 陈之安');
-                          pushToast(`「${m.character}」补刻完成，恢复可用`);
+                          pushToast(
+                            `「${m.character}」补刻完成，恢复可用；旧格位不会自动回填，请到「字盘布局」手动落位`,
+                          );
                         }}
                       >
                         补刻完成

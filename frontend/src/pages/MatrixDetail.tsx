@@ -149,12 +149,18 @@ export default function MatrixDetail() {
       pushToast('缺损登记未通过校验，请按提示修正', 'warn');
       return;
     }
-    await addDefect(input);
-    pushToast(
-      defectForm.availability === '可用'
-        ? '已登记缺损，字模保持可用'
-        : `已登记缺损，「${matrix.character}」已转为${defectForm.availability}`,
-    );
+    const { removedSlots, affectedCases } = await addDefect(input);
+    if (defectForm.availability === '可用') {
+      pushToast('已登记缺损，字模保持可用');
+    } else if (removedSlots > 0) {
+      pushToast(
+        `已登记缺损，「${matrix.character}」已转为${defectForm.availability}，并从 ${affectedCases} 个字盘撤下 ${removedSlots} 处格位`,
+      );
+    } else {
+      pushToast(
+        `已登记缺损，「${matrix.character}」已转为${defectForm.availability}，其当前未落在任何格位`,
+      );
+    }
     setDefectForm((prev) => ({ ...prev, handling: '', note: '' }));
     setDefectErrors({});
   };
@@ -201,7 +207,7 @@ export default function MatrixDetail() {
 
   const handleRepair = async () => {
     await repairMatrix(matrix.id, '补刻工 陈之安');
-    pushToast(`「${matrix.character}」补刻完成，恢复可用`);
+    pushToast(`「${matrix.character}」补刻完成，恢复可用；旧格位不会自动回填，需手动落位`);
   };
 
   const handleRemove = async () => {
@@ -386,7 +392,7 @@ export default function MatrixDetail() {
         <div className="mt-panel">
           <div className="mt-panel-head">
             <h3 className="font-song text-sm font-semibold text-ink">缺损历史</h3>
-            <span className="mt-sub">登记后自动停用字模，补刻后恢复可用</span>
+            <span className="mt-sub">登记停用后自动从所有字盘撤格，补刻恢复后需手动重新落位</span>
           </div>
           <ul className="divide-y divide-paper-line" data-testid="defect-history">
             {matrixDefects.length === 0 ? (
