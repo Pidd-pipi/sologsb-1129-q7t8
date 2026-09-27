@@ -1,0 +1,13 @@
+name: gbmovabletype
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-gbmovabletype}-frontend:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-gbmovabletype}-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-21829}:80"
+    environment:
+      - TZ=Asia/Shanghai

@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(168, 53, 42, 0.05), transparent 45%),
+      radial-gradient(circle at 88% 4%, rgba(138, 106, 52, 0.07), transparent 40%);
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-song;
+  }
+}
+
+@layer components {
+  .mt-panel {
+    @apply rounded-lg border border-paper-line bg-white/75 shadow-card;
+  }
+
+  .mt-panel-head {
+    @apply flex flex-wrap items-center justify-between gap-3 border-b border-paper-line px-4 py-3;
+  }
+
+  .mt-title {
+    @apply font-song text-lg font-semibold tracking-wide text-ink;
+  }
+
+  .mt-sub {
+    @apply text-xs text-ink-mute;
+  }
+
+  .mt-label {
+    @apply mb-1 block text-xs font-medium text-ink-soft;
+  }
+
+  .mt-input {
+    @apply w-full rounded border border-paper-line bg-paper/60 px-2.5 py-1.5 text-sm text-ink outline-none transition placeholder:text-ink-mute/70 focus:border-seal focus:ring-2 focus:ring-seal/20;
+  }
+
+  .mt-btn {
+    @apply inline-flex items-center gap-1.5 rounded border border-paper-line bg-white px-3 py-1.5 text-sm text-ink-soft transition hover:border-brass hover:text-ink disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .mt-btn-primary {
+    @apply border-seal bg-seal text-paper hover:bg-seal-soft hover:text-white;
+  }
+
+  .mt-btn-ghost {
+    @apply border-transparent bg-transparent text-ink-mute hover:text-seal;
+  }
+
+  .mt-chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-paper-line bg-white/70 px-2 py-0.5 text-[11px] text-ink-soft;
+  }
+
+  .mt-error {
+    @apply mt-1 text-[11px] text-seal;
+  }
+
+  .mt-hint {
+    @apply mt-1 text-[11px] text-ink-mute;
+  }
+
+  .mt-th {
+    @apply px-3 py-2 text-left text-[11px] font-medium tracking-wider text-ink-mute;
+  }
+
+  .mt-td {
+    @apply px-3 py-2 align-top text-sm text-ink-soft;
+  }
+
+  .mt-nav-link {
+    @apply rounded px-3 py-1.5 text-sm text-ink-soft transition hover:bg-paper-deep hover:text-ink;
+  }
+
+  .mt-nav-link-active {
+    @apply bg-seal text-paper hover:bg-seal hover:text-paper;
+  }
+}
